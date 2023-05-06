@@ -80,14 +80,30 @@ def train(x, cond, modules, optimizer, kl_anneal, args):
 class kl_annealing():
     def __init__(self, args):
         super().__init__()
-        raise NotImplementedError
-    
-    def update(self):
-        raise NotImplementedError
-    
-    def get_beta(self):
-        raise NotImplementedError
+        if args.kl_anneal_cyclical:
+            self.kl_anneal_ratio = args.kl_anneal_ratio
+            self.kl_anneal_cycle = args.kl_anneal_cycle
+        else:
+            self.kl_anneal_ratio = 0.25
+            self.kl_anneal_cycle = 1
+        
+        self.beta = np.ones(args.niter) * 1.0
+        self.i = 0
+        period = args.niter / args.kl_anneal_cycle
+        step = (1.0 - 0) / (period * self.kl_anneal_ratio)
+        for c in range(args.kl_anneal_cycle):
+            v, i = 0.0, 0.0
+            while(v<=1.0 and int(i+c*period)<args.niter):
+                self.beta[int(i+c*period)] = v
+                v += step
+                i += 1
 
+    def update(self):
+        self.i += 1
+
+    def get_beta(self):
+        beta = self.beta[self.i]
+        return beta
 
 def main():
     args = parse_args()
@@ -230,8 +246,9 @@ def main():
             epoch_kld += kld
         
         if epoch >= args.tfr_start_decay_epoch:
-            ### Update teacher forcing ratio ###
-            raise NotImplementedError
+            slope = (1.0 - args.tfr_lower_bound) / (args.niter - args.tfr_start_decay_epoch)
+            tfr = 1.0 - (epoch - args.tfr_start_decay_epoch) * slope
+            args.tfr = tfr            
 
         progress.update(1)
         with open('./{}/train_record.txt'.format(args.log_dir), 'a') as train_record:
