@@ -59,16 +59,34 @@ def train(x, cond, modules, optimizer, kl_anneal, args):
     modules['posterior'].zero_grad()
     modules['encoder'].zero_grad()
     modules['decoder'].zero_grad()
-
+    mse_criterion = nn.MSELoss()
+    
     # initialize the hidden state.
     modules['frame_predictor'].hidden = modules['frame_predictor'].init_hidden()
     modules['posterior'].hidden = modules['posterior'].init_hidden()
     mse = 0
     kld = 0
     use_teacher_forcing = True if random.random() < args.tfr else False
+    
+    x = x.permute(1, 0, 2, 3 ,4)
+    cond = cond.permute(1, 0, 2)
+    h_seq = [modules['encoder'](x[i]) for i in range(args.n_past+args.n_future)]
     for i in range(1, args.n_past + args.n_future):
-        raise NotImplementedError
+        h_target = h_seq[i][0]
+        if args.last_frame_skip or i < args.n_past:	
+            h, skip = h_seq[i-1]
+        else:
+            h = h_seq[i-1][0]
 
+        z_t, mu, logvar = modules['posterior'](h_target)
+        _, mu_p, logvar_p = modules['prior'](h)
+        h_pred = modules['frame_predictor'](torch.cat([cond[i-1], h, z_t], 1))
+        x_pred = modules['decoder']([h_pred, skip])
+        mse += mse_criterion(x_pred, x[i])
+        kld += kl_criterion(mu, logvar, mu_p, logvar_p, args)
+        if not use_teacher_forcing :
+            h_seq[i] = modules['encoder'](x_pred)
+    
     beta = kl_anneal.get_beta()
     loss = mse + kld * beta
     loss.backward()
