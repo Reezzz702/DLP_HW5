@@ -15,7 +15,7 @@ from tqdm import tqdm
 from dataset import bair_robot_pushing_dataset
 from models.lstm import gaussian_lstm, lstm
 from models.vgg_64 import vgg_decoder, vgg_encoder
-from utils import init_weights, kl_criterion, plot_pred, finn_eval_seq, pred
+from utils import init_weights, kl_criterion, plot_pred, finn_eval_seq, pred, plot_rec
 
 torch.backends.cudnn.benchmark = True
 
@@ -60,7 +60,7 @@ def train(x, cond, modules, optimizer, kl_anneal, args):
     modules['encoder'].zero_grad()
     modules['decoder'].zero_grad()
     mse_criterion = nn.MSELoss()
-    
+
     # initialize the hidden state.
     modules['frame_predictor'].hidden = modules['frame_predictor'].init_hidden()
     modules['posterior'].hidden = modules['posterior'].init_hidden()
@@ -79,11 +79,10 @@ def train(x, cond, modules, optimizer, kl_anneal, args):
             h = h_seq[i-1][0]
 
         z_t, mu, logvar = modules['posterior'](h_target)
-        _, mu_p, logvar_p = modules['prior'](h)
         h_pred = modules['frame_predictor'](torch.cat([cond[i-1], h, z_t], 1))
         x_pred = modules['decoder']([h_pred, skip])
         mse += mse_criterion(x_pred, x[i])
-        kld += kl_criterion(mu, logvar, mu_p, logvar_p, args)
+        kld += kl_criterion(mu, logvar, args)
         if not use_teacher_forcing :
             h_seq[i] = modules['encoder'](x_pred)
     
@@ -177,7 +176,7 @@ def main():
         frame_predictor = saved_model['frame_predictor']
         posterior = saved_model['posterior']
     else:
-        frame_predictor = lstm(args.g_dim+args.z_dim, args.g_dim, args.rnn_size, args.predictor_rnn_layers, args.batch_size, device)
+        frame_predictor = lstm(args.g_dim+args.z_dim+7, args.g_dim, args.rnn_size, args.predictor_rnn_layers, args.batch_size, device)
         posterior = gaussian_lstm(args.g_dim, args.z_dim, args.rnn_size, args.posterior_rnn_layers, args.batch_size, device)
         frame_predictor.apply(init_weights)
         posterior.apply(init_weights)
@@ -239,7 +238,7 @@ def main():
     }
     # --------- training loop ------------------------------------
 
-    progress = tqdm(total=args.niter)
+    progress = tqdm(total=args.niter, desc="epoch")
     best_val_psnr = 0
     for epoch in range(start_epoch, start_epoch + niter):
         frame_predictor.train()
@@ -251,18 +250,21 @@ def main():
         epoch_mse = 0
         epoch_kld = 0
 
-        for _ in range(args.epoch_size):
+        for _ in tqdm(range(args.epoch_size), "iter"):
             try:
                 seq, cond = next(train_iterator)
             except StopIteration:
                 train_iterator = iter(train_loader)
                 seq, cond = next(train_iterator)
             
+            seq, cond = seq.to(device), cond.to(device)
             loss, mse, kld = train(seq, cond, modules, optimizer, kl_anneal, args)
             epoch_loss += loss
             epoch_mse += mse
             epoch_kld += kld
         
+        print(f'KL beta: {kl_anneal.get_beta()}\n')
+        kl_anneal.update()
         if epoch >= args.tfr_start_decay_epoch:
             slope = (1.0 - args.tfr_lower_bound) / (args.niter - args.tfr_start_decay_epoch)
             tfr = 1.0 - (epoch - args.tfr_start_decay_epoch) * slope
@@ -286,7 +288,12 @@ def main():
                     validate_iterator = iter(validate_loader)
                     validate_seq, validate_cond = next(validate_iterator)
 
+                validate_seq = validate_seq.permute(1, 0, 2, 3 ,4).to(device)
+                validate_cond = validate_cond.permute(1, 0, 2).to(device)
                 pred_seq = pred(validate_seq, validate_cond, modules, args, device)
+                # print(f"pred_seq shape: {len(pred_seq)}")
+                # print(f"pred_seq shape: {pred_seq[0 ].shape}")
+
                 _, _, psnr = finn_eval_seq(validate_seq[args.n_past:], pred_seq[args.n_past:])
                 psnr_list.append(psnr)
                 
@@ -314,8 +321,10 @@ def main():
             except StopIteration:
                 validate_iterator = iter(validate_loader)
                 validate_seq, validate_cond = next(validate_iterator)
-
+            validate_seq = validate_seq.permute(1, 0, 2, 3 ,4).to(device)
+            validate_cond = validate_cond.permute(1, 0, 2).to(device)
             plot_pred(validate_seq, validate_cond, modules, epoch, args)
+            plot_rec(validate_seq, validate_cond, modules, epoch, args)
 
 if __name__ == '__main__':
     main()

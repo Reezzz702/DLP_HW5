@@ -14,7 +14,8 @@ class bair_robot_pushing_dataset(Dataset):
     def __init__(self, args, mode='train', transform=default_transform):
         assert mode == 'train' or mode == 'test' or mode == 'validate'
         self.root = '{}/{}'.format(args.data_root, mode)
-        self.seq_len = max(args.n_past + args.n_future, args.n_eval)
+        self.train_seq_len = max(args.n_past + args.n_future, args.n_eval)
+        self.seq_len = args.n_past + args.n_future
         self.mode = mode
         if mode == 'train':
             self.ordered = False
@@ -41,16 +42,18 @@ class bair_robot_pushing_dataset(Dataset):
         
     def get_seq(self):
         if self.ordered:
-            self.cur_dir = self.dirs[self.d]
+            self.cur_dir = self.dirs[self.idx]
+            data_len = self.seq_len
             if self.idx == len(self.dirs) - 1:
                 self.idx = 0
             else:
                 self.idx += 1
         else:
+            data_len = self.train_seq_len
             self.cur_dir = self.dirs[np.random.randint(len(self.dirs))]
             
         image_seq = []
-        for i in range(self.seq_len):
+        for i in range(data_len):
             fname = '{}/{}.png'.format(self.cur_dir, i)
             img = Image.open(fname)
             image_seq.append(self.transform(img))

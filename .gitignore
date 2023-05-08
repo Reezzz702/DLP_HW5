@@ -1,3 +1,5 @@
 test/
 train/
 validate/
+*__pycache__
+log/
