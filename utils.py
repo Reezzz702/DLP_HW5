@@ -273,6 +273,68 @@ def pred(validate_seq, validate_cond, modules, args, device):
    
     return gen_seq
 
+def plot_result(validate_seq, validate_cond, modules, epoch, args):
+    modules['frame_predictor'].hidden = modules['frame_predictor'].init_hidden()
+    modules['posterior'].hidden = modules['posterior'].init_hidden()
+    # validate_seq = validate_seq.permute(1, 0, 2, 3 ,4)
+    # validate_cond = validate_cond.permute(1, 0, 2)
+    gen_seq = []
+    gen_seq.append(validate_seq[0])
+    x_in = validate_seq[0]
+    h_seq = [modules['encoder'](validate_seq[i]) for i in range(args.n_past+args.n_future)]
+    for i in range(1, args.n_past+args.n_future):
+        h_target = h_seq[i][0].detach()
+        if args.last_frame_skip or i < args.n_past:	
+            h, skip = h_seq[i-1]
+        else:
+            h, _ = h_seq[i-1]
+        h = h.detach()
+        z_t, mu, logvar = modules['posterior'](h_target)
+        if i < args.n_past:
+            modules['frame_predictor'](torch.cat([validate_cond[i-1], h, z_t], 1)) 
+            gen_seq.append(validate_seq[i])
+        else:
+            h_pred = modules['frame_predictor'](torch.cat([validate_cond[i-1], h, z_t], 1)).detach()
+            x_pred = modules['decoder']([h_pred, skip]).detach()
+            gen_seq.append(x_pred)
+   
+    to_plot = []
+    nrow = min(args.batch_size, 10)
+    for i in range(nrow):
+        row = []
+        for t in range(args.n_past+args.n_future):
+            row.append(gen_seq[t][i]) 
+        to_plot.append(row)
+    fname = '%s/gen/rec_%d.png' % (args.log_dir, epoch) 
+    save_tensors_image(fname, to_plot)
+
+    gt = []
+    for i in range(nrow):
+        row = []
+        for t in range(args.n_past+args.n_future):
+            row.append(validate_seq[t][i]) 
+        gt.append(row)
+    fname = '%s/gen/gt.png' % (args.log_dir) 
+    save_tensors_image(fname, to_plot)
+    
+
+def save_gif_with_text(filename, inputs, text, duration=0.25):
+    images = []
+    for tensor, text in zip(inputs, text):
+        img = image_tensor([draw_text_tensor(ti, texti) for ti, texti in zip(tensor, text)], padding=0)
+        img = img.cpu()
+        img = img.transpose(0,1).transpose(1,2).clamp(0,1).numpy()
+        images.append(img)
+    imageio.mimsave(filename, img_as_ubyte(images), duration=duration)
+
+def draw_text_tensor(tensor, text):
+    np_x = tensor.transpose(0, 1).transpose(1, 2).data.cpu().numpy()
+    pil = Image.fromarray(np.uint8(np_x*255))
+    draw = ImageDraw.Draw(pil)
+    draw.text((4, 64), text, (0,0,0))
+    img = np.asarray(pil)
+    return Variable(torch.Tensor(img / 255.)).transpose(1, 2).transpose(0, 1)
+
 def plot_rec(validate_seq, validate_cond, modules, epoch, args):
     modules['frame_predictor'].hidden = modules['frame_predictor'].init_hidden()
     modules['posterior'].hidden = modules['posterior'].init_hidden()

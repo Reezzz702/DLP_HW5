@@ -23,12 +23,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--lr', default=0.002, type=float, help='learning rate')
     parser.add_argument('--beta1', default=0.9, type=float, help='momentum term for adam')
-    parser.add_argument('--batch_size', default=12, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=32, type=int, help='batch size')
     parser.add_argument('--log_dir', default='./logs/fp', help='base directory to save logs')
     parser.add_argument('--model_dir', default='', help='base directory to save logs')
     parser.add_argument('--data_root', default='./data/processed_data', help='root directory for data')
     parser.add_argument('--optimizer', default='adam', help='optimizer to train with')
-    parser.add_argument('--niter', type=int, default=300, help='number of epochs to train for')
+    parser.add_argument('--niter', type=int, default=100, help='number of epochs to train for')
     parser.add_argument('--epoch_size', type=int, default=600, help='epoch size')
     parser.add_argument('--tfr', type=float, default=1.0, help='teacher forcing ratio (0 ~ 1)')
     parser.add_argument('--tfr_start_decay_epoch', type=int, default=0, help='The epoch that teacher forcing ratio become decreasing')
@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--tfr_lower_bound', type=float, default=0, help='The lower bound of teacher forcing ratio for scheduling teacher forcing ratio (0 ~ 1)')
     parser.add_argument('--kl_anneal_cyclical', default=False, action='store_true', help='use cyclical mode')
     parser.add_argument('--kl_anneal_ratio', type=float, default=0.5, help='The decay ratio of kl annealing')
-    parser.add_argument('--kl_anneal_cycle', type=int, default=3, help='The number of cycle for kl annealing during training (if use cyclical mode)')
+    parser.add_argument('--kl_anneal_cycle', type=int, default=2, help='The number of cycle for kl annealing during training (if use cyclical mode)')
     parser.add_argument('--seed', default=1, type=int, help='manual seed')
     parser.add_argument('--n_past', type=int, default=2, help='number of frames to condition on')
     parser.add_argument('--n_future', type=int, default=10, help='number of frames to predict')
@@ -263,7 +263,7 @@ def main():
             epoch_mse += mse
             epoch_kld += kld
         
-        print(f'KL beta: {kl_anneal.get_beta()}\n')
+        # print(f'KL beta: {kl_anneal.get_beta()}\n')
         kl_anneal.update()
         if epoch >= args.tfr_start_decay_epoch:
             slope = (1.0 - args.tfr_lower_bound) / (args.niter - args.tfr_start_decay_epoch)
