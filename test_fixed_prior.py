@@ -218,7 +218,7 @@ if __name__ == '__main__':
         psnr_list.append(psnr)
         # print(test_seq.shape)
         if plot_first:
-            utils.plot_result(test_seq, test_cond, modules, 0, args)
+            utils.plot_pred_result(test_seq, test_cond, modules, 0, args)
             plot_first = False
     ave_psnr = np.mean(np.concatenate(psnr_list))
     print(f'====================== test psnr = {ave_psnr:.5f} ========================')

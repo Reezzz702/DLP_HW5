@@ -369,3 +369,58 @@ def plot_rec(validate_seq, validate_cond, modules, epoch, args):
         to_plot.append(row)
     fname = '%s/gen/rec_%d.png' % (args.log_dir, epoch) 
     save_tensors_image(fname, to_plot)
+
+
+def plot_pred_result(validate_seq, validate_cond, modules, epoch, args):
+    # print('plot_pred')
+    gen_seq = []
+    gt_seq = [validate_seq[i] for i in range(len(validate_seq))]
+
+    h_seq = [modules['encoder'](validate_seq[i]) for i in range(args.n_past + args.n_future)]
+    modules['frame_predictor'].hidden = modules['frame_predictor'].init_hidden()
+    modules['posterior'].hidden = modules['posterior'].init_hidden()
+    gen_seq.append(validate_seq[0])
+    x_in = validate_seq[0]
+    for i in range(1, args.n_past+args.n_future):
+        if args.last_frame_skip or i < args.n_past:	
+            h, skip = h_seq[i-1]
+        else:
+            h, _ = h_seq[i-1]
+        h = h.detach()
+        z_t = torch.randn(args.batch_size, args.z_dim).cuda()
+        if i < args.n_past:
+            z_t, _, _ = modules['posterior'](h_seq[i][0])
+            modules['frame_predictor'](torch.cat([validate_cond[i-1], h, z_t], 1)) 
+            x_in = validate_seq[i]
+            gen_seq.append(x_in)
+        else:
+            h_pred = modules['frame_predictor'](torch.cat([validate_cond[i-1], h, z_t], 1)).detach()
+            x_in = modules['decoder']([h_pred, skip]).detach()
+            h_seq[i] = modules['encoder'](x_in)
+            gen_seq.append(x_in)
+
+    to_plot = []
+    nrow = min(args.batch_size, 10)
+    for i in range(nrow):
+        # ground truth sequence
+        row = [] 
+        for t in range(args.n_past+args.n_future):
+            row.append(gen_seq[t][i])
+        to_plot.append(row)
+
+    fname = '%s/pred_%d.png' % (args.log_dir, epoch) 
+    save_tensors_image(fname, to_plot)
+
+    gt = []
+    for i in range(nrow):
+        # ground truth sequence
+        row = [] 
+        for t in range(args.n_past+args.n_future):
+            row.append(gt_seq[t][i])
+        gt.append(row)
+
+    fname = '%s/gt_%d.png' % (args.log_dir, epoch) 
+    save_tensors_image(fname, gt)
+
+
+    
